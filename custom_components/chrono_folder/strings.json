@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Chrono Folder",
+        "description": "IMPORTANT: Photos must be placed inside the /config/www folder, for example /config/www/slideshow/vacation.",
+        "data": {
+          "label":      "Label",
+          "folder":     "Folder",
+          "filespec":   "File spec",
+          "recurse":    "Recurse subfolders",
+          "max_photos": "Max. photos"
+        },
+        "data_description": {
+          "label":      "A name to identify this folder watcher",
+          "folder":     "Enter the folder name relative to the www folder, e.g. /slideshow/vacation",
+          "filespec":   "File pattern(s) to match, separated by semicolons (e.g. *.jpg; 2026*.png). Default: *.*",
+          "recurse":    "Include files in subfolders",
+          "max_photos": "Specify the maximum number of photos to scan to prevent performance degradation."
+        }
+      }
+    },
+    "error": {
+      "invalid_folder": "Folder does not exist or is not accessible under the www folder"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit Chrono Folder",
+        "description": "IMPORTANT: Photos must be placed inside the /config/www folder, for example /config/www/slideshow/vacation.",
+        "data": {
+          "label":      "Label",
+          "folder":     "Folder",
+          "filespec":   "File spec",
+          "recurse":    "Recurse subfolders",
+          "max_photos": "Max. photos"
+        },
+        "data_description": {
+          "label":      "A name to identify this folder watcher",
+          "folder":     "Enter the folder name relative to the www folder, e.g. /slideshow/vacation",
+          "filespec":   "File pattern(s) to match, separated by semicolons (e.g. *.jpg; 2026*.png). Default: *.*",
+          "recurse":    "Include files in subfolders",
+          "max_photos": "Specify the maximum number of photos to scan to prevent performance degradation."
+        }
+      }
+    },
+    "error": {
+      "invalid_folder": "Folder does not exist or is not accessible under the www folder"
+    }
+  }
+}

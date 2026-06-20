@@ -1,0 +1,14 @@
+{
+  "domain": "chrono_folder",
+  "name": "Chrono Folder",
+  "version": "0.0.13",
+  "config_flow": true,
+  "documentation": "https://github.com/rob-vandenberg/chrono-folder",
+  "issue_tracker": "https://github.com/rob-vandenberg/chrono-folder/issues",
+  "requirements": [
+    "Pillow>=10.0.0",
+    "watchdog>=3.0.0"
+  ],
+  "iot_class": "local_push",
+  "codeowners": ["@rob-vandenberg"]
+}
