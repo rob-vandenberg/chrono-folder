@@ -1,0 +1,23 @@
+name: HACS Action
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  hacs:
+    name: HACS Action
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v6
+      - name: HACS Action
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
