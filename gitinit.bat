@@ -26,9 +26,8 @@ set "UPPER_MAP=a=A b=B c=C d=D e=E f=F g=G h=H i=I j=J k=K l=L m=M n=N o=O p=P q
 
 :: --- Step 0: Abort guard - ONLY on signs that gitinit already fully ran ------
 set "EXISTING="
-if exist "hacs.json"                           set "EXISTING=hacs.json"
-if exist ".github\workflows\validate_hacs.yml" set "EXISTING=.github\workflows\validate_hacs.yml"
-if exist ".github\workflows\hassfest.yml"      set "EXISTING=.github\workflows\hassfest.yml"
+if exist "hacs.json"                     set "EXISTING=hacs.json"
+if exist ".github\workflows\validate_hassfest_hacs.yml" set "EXISTING=.github\workflows\validate_hassfest_hacs.yml"
 
 if not "%EXISTING%"=="" (
     echo.
@@ -169,8 +168,7 @@ if exist "hacs.json"                          (echo    hacs.json            - al
 if exist "README.md"                          (echo    README.md            - already exists, will skip) else (echo    README.md            - will create)
 if exist ".gitignore"                         (echo    .gitignore           - already exists, will skip) else (echo    .gitignore           - will create)
 if exist ".gitattributes"                     (echo    .gitattributes       - already exists, will skip) else (echo    .gitattributes       - will create)
-if exist ".github\workflows\validate_hacs.yml" (echo    validate_hacs.yml    - already exists, will skip) else (echo    validate_hacs.yml    - will create)
-if exist ".github\workflows\hassfest.yml"      (echo    hassfest.yml         - already exists, will skip) else (echo    hassfest.yml         - will create)
+if exist ".github\workflows\validate_hassfest_hacs.yml"     (echo    validate_hassfest_hacs.yml         - already exists, will skip) else (echo    validate_hassfest_hacs.yml         - will create)
 echo.
 echo  Folders ^(created only if missing^):
 echo    .github\workflows   art   backup   docs
@@ -225,13 +223,13 @@ if "%MANIFEST_EXISTS%"=="1" (
         echo {
         echo   "domain": "%DOMAIN%",
         echo   "name": "%PROJECT_NAME%",
-        echo   "version": "0.0.0",
+        echo   "codeowners": ["@%GITHUB_USER%"],
         echo   "config_flow": true,
         echo   "documentation": "https://github.com/%GITHUB_USER%/%PROJECT_IDENTIFIER%",
+        echo   "iot_class": "%IOT_CLASS%",
         echo   "issue_tracker": "https://github.com/%GITHUB_USER%/%PROJECT_IDENTIFIER%/issues",
         echo   "requirements": [],
-        echo   "iot_class": "%IOT_CLASS%",
-        echo   "codeowners": ["@%GITHUB_USER%"]
+        echo   "version": "0.0.0"
         echo }
     )
     echo  Created custom_components\%DOMAIN%\manifest.json
@@ -314,12 +312,13 @@ if exist ".gitattributes" (
     echo  Created .gitattributes
 )
 
-:: validate_hacs.yml
-if exist ".github\workflows\validate_hacs.yml" (
-    echo  validate_hacs.yml already exists - skipping
+:: validate_hassfest_hacs.yml - single workflow, sequential steps (hassfest must pass before
+:: HACS Action runs - one push triggers exactly one workflow run, not two)
+if exist ".github\workflows\validate_hassfest_hacs.yml" (
+    echo  validate_hassfest_hacs.yml already exists - skipping
 ) else (
-    > ".github\workflows\validate_hacs.yml" (
-        echo name: HACS Action
+    > ".github\workflows\validate_hassfest_hacs.yml" (
+        echo name: "Validate: hassfest + HACS"
         echo.
         echo on:
         echo   push:
@@ -333,41 +332,20 @@ if exist ".github\workflows\validate_hacs.yml" (
         echo     - cron: "0 0 * * *"
         echo.
         echo jobs:
-        echo   hacs:
-        echo     name: HACS Action
+        echo   validate:
         echo     runs-on: "ubuntu-latest"
         echo     steps:
         echo       - uses: actions/checkout@v6
+        echo.
+        echo       - name: Validate with hassfest
+        echo         uses: home-assistant/actions/hassfest@master
+        echo.
         echo       - name: HACS Action
         echo         uses: "hacs/action@main"
         echo         with:
         echo           category: "integration"
     )
-    echo  Created .github\workflows\validate_hacs.yml
-)
-
-:: hassfest.yml
-if exist ".github\workflows\hassfest.yml" (
-    echo  hassfest.yml already exists - skipping
-) else (
-    > ".github\workflows\hassfest.yml" (
-        echo name: Validate with hassfest
-        echo.
-        echo on:
-        echo   push:
-        echo   pull_request:
-        echo   workflow_dispatch:
-        echo   schedule:
-        echo     - cron: "0 0 * * *"
-        echo.
-        echo jobs:
-        echo   validate:
-        echo     runs-on: "ubuntu-latest"
-        echo     steps:
-        echo       - uses: actions/checkout@v6
-        echo       - uses: home-assistant/actions/hassfest@master
-    )
-    echo  Created .github\workflows\hassfest.yml
+    echo  Created .github\workflows\validate_hassfest_hacs.yml
 )
 
 :: --- Step 8: Commit and push -------------------------------------------------
