@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import logging
 import os
@@ -37,7 +38,12 @@ from .const import (
     EXIF_PREFIX,
 )
 
-__version__ = "sensor.py 0.0.10"
+__version__ = "sensor.py 0.0.12"
+# v0.0.12: Normalize exifDateTimeOriginal/Digitized to use '-' in date portion;
+#           add derived exifDateOriginal, exifTimeOriginal, exifDateDigitized,
+#           exifTimeDigitized fields
+# v0.0.11: Add asyncio.Lock around all _files mutations to prevent races
+#           between full rescans and incremental watcher updates
 # v0.0.10: Incremental watcher updates with 10s debounce; hard max_photos cap;
 #           at-cap deletes trigger full rescan to backfill from disk;
 #           remove unused callback import and unused _refresh_lock
@@ -227,6 +233,27 @@ def _dms_to_decimal(dms: tuple, ref: str) -> float | None:
         return None
 
 
+def _split_exif_datetime(result: dict, key: str, date_key: str, time_key: str) -> None:
+    """Convert a 'YYYY:MM:DD HH:MM:SS' EXIF datetime value in-place to use
+    '-' in the date portion, and add separate date/time fields derived from it.
+    No-op if the key is not present or does not match the expected format.
+    """
+    value = result.get(key)
+    if not value or value == "n/a":
+        return
+
+    parts = value.split(" ", 1)
+    if len(parts) != 2:
+        return
+
+    date_part, time_part = parts
+    date_part_fixed = date_part.replace(":", "-")
+
+    result[key]      = f"{date_part_fixed} {time_part}"
+    result[date_key] = date_part_fixed
+    result[time_key] = time_part
+
+
 def _extract_exif(path: str) -> dict[str, Any]:
     """Extract all EXIF data from an image file using Pillow.
     Returns a dict of camelCased exif* keys, all values as clean strings.
@@ -292,6 +319,17 @@ def _extract_exif(path: str) -> dict[str, Any]:
                     result[key] = _clean_tuple(gps_value)
                 else:
                     result[key] = _clean_scalar(gps_value)
+
+        # Split DateTimeOriginal and DateTimeDigitized into separate
+        # date/time fields, and normalize the date portion to use '-'.
+        _split_exif_datetime(
+            result, _to_camel("DateTimeOriginal"),
+            _to_camel("DateOriginal"), _to_camel("TimeOriginal"),
+        )
+        _split_exif_datetime(
+            result, _to_camel("DateTimeDigitized"),
+            _to_camel("DateDigitized"), _to_camel("TimeDigitized"),
+        )
 
     except Exception as err:
         _LOGGER.debug("chrono_folder: EXIF extraction failed for %s: %s", path, err)
@@ -478,6 +516,7 @@ class ChronoFolderSensor(SensorEntity):
         self._pending_changes: dict[str, str] = {}
         self._pending_lock     = threading.Lock()
         self._debounce_timer:  threading.Timer | None = None
+        self._scan_lock        = asyncio.Lock()
 
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}"
         self._attr_name      = self._label
@@ -558,60 +597,63 @@ class ChronoFolderSensor(SensorEntity):
         Falls back to a full rescan if any deletion occurs while the list
         is at the max_photos cap, so a freed slot can be backfilled from disk.
         """
-        deletes = [p for p, t in changes.items() if t == "deleted"]
-        creates_or_modifies = [p for p, t in changes.items() if t != "deleted"]
+        async with self._scan_lock:
+            deletes = [p for p, t in changes.items() if t == "deleted"]
+            creates_or_modifies = [p for p, t in changes.items() if t != "deleted"]
 
-        at_cap = len(self._files) >= self._max_photos
-        deleting_existing = any(
-            any(e[FILE_PATH] == p for e in self._files) for p in deletes
-        )
-
-        if at_cap and deleting_existing:
-            # A slot may free up beyond the current cap - only a full
-            # rescan can correctly determine the backfill candidate.
-            await self._async_refresh()
-            return
-
-        # Remove deleted files.
-        if deletes:
-            delete_set = set(deletes)
-            self._files = [e for e in self._files if e[FILE_PATH] not in delete_set]
-
-        # Add or update created/modified files, respecting the hard cap.
-        for full_path in creates_or_modifies:
-            existing_index = next(
-                (i for i, e in enumerate(self._files) if e[FILE_PATH] == full_path),
-                None,
+            at_cap = len(self._files) >= self._max_photos
+            deleting_existing = any(
+                any(e[FILE_PATH] == p for e in self._files) for p in deletes
             )
-            entry = await self._hass.async_add_executor_job(
-                _build_single_entry_by_path,
-                full_path,
-                self._www_path,
-                self._relative_folder,
-                self._exif_cache,
-            )
-            if entry is None:
-                # File vanished or unreadable between event and processing.
+
+            if at_cap and deleting_existing:
+                # A slot may free up beyond the current cap - only a full
+                # rescan can correctly determine the backfill candidate.
+                # Call the internal helper directly - the lock is already held.
+                await self._async_refresh_locked()
+                return
+
+            # Remove deleted files.
+            if deletes:
+                delete_set = set(deletes)
+                self._files = [e for e in self._files if e[FILE_PATH] not in delete_set]
+
+            # Add or update created/modified files, respecting the hard cap.
+            for full_path in creates_or_modifies:
+                existing_index = next(
+                    (i for i, e in enumerate(self._files) if e[FILE_PATH] == full_path),
+                    None,
+                )
+                entry = await self._hass.async_add_executor_job(
+                    _build_single_entry_by_path,
+                    full_path,
+                    self._www_path,
+                    self._relative_folder,
+                    self._exif_cache,
+                )
+                if entry is None:
+                    # File vanished or unreadable between event and processing.
+                    if existing_index is not None:
+                        del self._files[existing_index]
+                    continue
+
                 if existing_index is not None:
-                    del self._files[existing_index]
-                continue
+                    self._files[existing_index] = entry
+                elif len(self._files) < self._max_photos:
+                    self._files.append(entry)
+                # else: at cap, new file is silently not added (hard limit).
 
-            if existing_index is not None:
-                self._files[existing_index] = entry
-            elif len(self._files) < self._max_photos:
-                self._files.append(entry)
-            # else: at cap, new file is silently not added (hard limit).
-
-        self._files.sort(key=lambda e: e[FILE_NAME])
+            self._files.sort(key=lambda e: e[FILE_NAME])
 
         if self.hass is not None and self.entity_id:
             self.async_write_ha_state()
 
     # ── Scan ──────────────────────────────────────────────────────────────────
 
-    async def _async_refresh(self) -> None:
-        """Run folder scan in executor and update state.
-        Only calls async_write_ha_state when the entity is already registered.
+    async def _async_refresh_locked(self) -> None:
+        """Run folder scan and update self._files.
+        Caller must already hold self._scan_lock. Does not write HA state -
+        callers are responsible for that after the lock is released.
         """
         files = await self._hass.async_add_executor_job(
             _scan_folder,
@@ -623,21 +665,21 @@ class ChronoFolderSensor(SensorEntity):
             self._exif_cache,
         )
         self._files = files
+
+    async def _async_refresh(self) -> None:
+        """Run folder scan in executor and update state, holding self._scan_lock
+        so this cannot interleave with incremental watcher updates.
+        Only calls async_write_ha_state when the entity is already registered.
+        """
+        async with self._scan_lock:
+            await self._async_refresh_locked()
         if self.hass is not None and self.entity_id:
             self.async_write_ha_state()
 
     async def async_update(self) -> None:
         """Called by HA for a manual refresh."""
-        files = await self._hass.async_add_executor_job(
-            _scan_folder,
-            self._www_path,
-            self._relative_folder,
-            self._filespec,
-            self._recurse,
-            self._max_photos,
-            self._exif_cache,
-        )
-        self._files = files
+        async with self._scan_lock:
+            await self._async_refresh_locked()
 
     # ── State and attributes ──────────────────────────────────────────────────
 
