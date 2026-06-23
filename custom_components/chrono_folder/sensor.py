@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import mimetypes
 import os
 import threading
 from datetime import datetime
@@ -31,14 +32,19 @@ from .const import (
     FILE_PATH,
     FILE_URL,
     FILE_NAME,
+    FILE_NAME_EXT,
+    FILE_TYPE,
     FILE_DATE,
     FILE_TIME,
     FILE_SIZE,
-    FILE_TYPE,
+    FILE_WIDTH,
+    FILE_HEIGHT,
     EXIF_PREFIX,
 )
 
-__version__ = "sensor.py 0.0.12"
+__version__ = "sensor.py 0.0.13"
+# v0.0.13: Rename fileType to fileNameExt; add fileType category (Image/Video/Audio/
+#           Text/Application/Unknown); add fileWidth/fileHeight for images only
 # v0.0.12: Normalize exifDateTimeOriginal/Digitized to use '-' in date portion;
 #           add derived exifDateOriginal, exifTimeOriginal, exifDateDigitized,
 #           exifTimeDigitized fields
@@ -337,6 +343,38 @@ def _extract_exif(path: str) -> dict[str, Any]:
     return result
 
 
+def _file_category(filename: str) -> str:
+    """Return a high-level file category based on the filename's MIME type.
+    One of: Image, Video, Audio, Text, Application, Unknown.
+    """
+    mime, _ = mimetypes.guess_type(filename)
+    if mime is None:
+        return "Unknown"
+    main_type = mime.split("/", 1)[0]
+    mapping = {
+        "image":       "Image",
+        "video":       "Video",
+        "audio":       "Audio",
+        "text":        "Text",
+        "application": "Application",
+    }
+    return mapping.get(main_type, "Unknown")
+
+
+def _read_image_size(path: str) -> tuple[int, int] | None:
+    """Return (width, height) of an image using Pillow's lazy header read.
+    Returns None if Pillow is unavailable or the file cannot be read as an image.
+    """
+    if not PILLOW_AVAILABLE:
+        return None
+    try:
+        with Image.open(path) as img:
+            return img.size
+    except Exception as err:
+        _LOGGER.debug("chrono_folder: could not read image size for %s: %s", path, err)
+        return None
+
+
 def _build_file_entry(
     full_path: str,
     www_path: str,
@@ -354,20 +392,31 @@ def _build_file_entry(
     rel_dir      = os.path.relpath(os.path.dirname(full_path), www_path)
     file_url_path = rel_dir.replace(os.sep, "/")
 
+    category = _file_category(filename)
+
     # Use cached EXIF if file has not changed.
     if cache_key not in exif_cache:
         exif_cache[cache_key] = _extract_exif(full_path)
     exif_data = exif_cache[cache_key]
 
     entry: dict[str, Any] = {
-        FILE_PATH: full_path,
-        FILE_URL:  f"/local/{file_url_path}/{filename}",
-        FILE_NAME: filename,
-        FILE_DATE: mtime.strftime("%Y-%m-%d"),
-        FILE_TIME: mtime.strftime("%H:%M:%S"),
-        FILE_SIZE: stat.st_size,
-        FILE_TYPE: ext.lstrip(".").lower(),
+        FILE_PATH:     full_path,
+        FILE_URL:      f"/local/{file_url_path}/{filename}",
+        FILE_NAME:     filename,
+        FILE_NAME_EXT: ext.lstrip(".").lower(),
+        FILE_TYPE:     category,
+        FILE_DATE:     mtime.strftime("%Y-%m-%d"),
+        FILE_TIME:     mtime.strftime("%H:%M:%S"),
+        FILE_SIZE:     stat.st_size,
     }
+
+    # Width and height only for images.
+    if category == "Image":
+        size = _read_image_size(full_path)
+        if size is not None:
+            entry[FILE_WIDTH]  = size[0]
+            entry[FILE_HEIGHT] = size[1]
+
     entry.update(exif_data)
     return entry
 
