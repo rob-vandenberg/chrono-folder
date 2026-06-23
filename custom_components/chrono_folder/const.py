@@ -1,4 +1,5 @@
-__version__ = "const.py 0.0.4"
+__version__ = "const.py 0.0.5"
+# v0.0.5: Rename fileType to fileNameExt; add fileType (category), fileWidth, fileHeight
 # v0.0.4: Add CONF_MAX_PHOTOS, DEFAULT_MAX_PHOTOS, ATTR_MAX_PHOTOS, DEBOUNCE_SECONDS
 # v0.0.3: Add ATTR_FOLDER, ATTR_FILESPEC, ATTR_RECURSE sensor attributes
 # v0.0.2: Drop FILE_FOLDER, add FILE_PATH and FILE_URL
@@ -34,10 +35,13 @@ ATTR_MAX_PHOTOS = "maxPhotos"
 FILE_PATH       = "filePath"
 FILE_URL        = "fileURL"
 FILE_NAME       = "fileName"
+FILE_NAME_EXT   = "fileNameExt"
+FILE_TYPE       = "fileType"
 FILE_DATE       = "fileDate"
 FILE_TIME       = "fileTime"
 FILE_SIZE       = "fileSize"
-FILE_TYPE       = "fileType"
+FILE_WIDTH      = "fileWidth"
+FILE_HEIGHT     = "fileHeight"
 
 # ─── EXIF prefix ──────────────────────────────────────────────────────────────
 EXIF_PREFIX     = "exif"
