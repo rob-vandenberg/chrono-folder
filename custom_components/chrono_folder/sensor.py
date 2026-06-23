@@ -42,7 +42,9 @@ from .const import (
     EXIF_PREFIX,
 )
 
-__version__ = "sensor.py 0.0.13"
+__version__ = "sensor.py 0.0.14"
+# v0.0.14: Use context manager for Image.open in _extract_exif to release file
+#           handle deterministically, consistent with _read_image_size
 # v0.0.13: Rename fileType to fileNameExt; add fileType category (Image/Video/Audio/
 #           Text/Application/Unknown); add fileWidth/fileHeight for images only
 # v0.0.12: Normalize exifDateTimeOriginal/Digitized to use '-' in date portion;
@@ -270,8 +272,8 @@ def _extract_exif(path: str) -> dict[str, Any]:
 
     result: dict[str, Any] = {}
     try:
-        img = Image.open(path)
-        raw_exif = img._getexif()  # noqa: SLF001
+        with Image.open(path) as img:
+            raw_exif = img._getexif()  # noqa: SLF001
         if not raw_exif:
             return {}
 
