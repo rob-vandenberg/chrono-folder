@@ -21,3 +21,19 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Never push these (cleanup 2026-09-29)
+*.zip
+*.bat
+*.psd
+*.ai
+*.log
+
+# Artwork not used in README.md
+art/Gemini_Generated_Image_cr6ll5cr6ll5cr6l.png
+art/Gemini_Generated_Image_dqnlaldqnlaldqnl.png
+art/Untitled-1.png
+art/chrono-folder.png
+art/chrono-folder.svg
+art/icon.png
+art/under-construction.png
